@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"strings"
+
 	"github.com/akzj/go-regex/machine"
 )
 
@@ -14,7 +16,10 @@ type Matcher interface {
 
 // Engine is the regex execution engine
 type Engine struct {
-	dfa *machine.DFA
+	dfa            *machine.DFA
+	patternLength   int   // Pattern length
+	isLiteral      bool  // True if pattern is literal (no regex metacharacters)
+	literalPattern string // The literal pattern string
 }
 
 // New creates a new engine from a compiled DFA
@@ -23,6 +28,14 @@ func New(dfa *machine.DFA) *Engine {
 		return nil
 	}
 	return &Engine{dfa: dfa}
+}
+
+// NewWithLiteralPattern creates an engine optimized for literal pattern matching
+func NewWithLiteralPattern(dfa *machine.DFA, literal string) *Engine {
+	if dfa == nil {
+		return nil
+	}
+	return &Engine{dfa: dfa, patternLength: len(literal), isLiteral: true, literalPattern: literal}
 }
 
 // Match checks if the input matches the entire pattern
@@ -35,23 +48,32 @@ func (e *Engine) Match(input string) bool {
 }
 
 // Find finds the first match in the input, returning start and end indices
-// Returns (-1, -1) if no match is found
 func (e *Engine) Find(input string) (start, end int) {
 	if e == nil || e.dfa == nil {
 		return -1, -1
 	}
 	
+	// Fast path for literal patterns - use strings.Index (highly optimized)
+	if e.isLiteral {
+		idx := strings.Index(input, e.literalPattern)
+		if idx >= 0 {
+			return idx, idx + len(e.literalPattern)
+		}
+		return -1, -1
+	}
+	
+	// Convert to runes once
 	inputRunes := []rune(input)
 	n := len(inputRunes)
 	
 	// If pattern has start anchor (^), only try matching from position 0
 	if e.dfa.HasStartAnchor {
-		return e.findFrom(input, 0)
+		return e.findFrom(inputRunes, 0)
 	}
 	
 	// Try starting at each position
 	for i := 0; i <= n; i++ {
-		matchStart, matchEnd := e.findFrom(input, i)
+		matchStart, matchEnd := e.findFrom(inputRunes, i)
 		if matchStart >= 0 && matchEnd >= matchStart {
 			return matchStart, matchEnd
 		}
@@ -93,7 +115,6 @@ func (e *Engine) findFromWithCaptures(input string, pos int) (start, end int, ca
 
 	captures = make(map[int]string)
 
-	// If we're at end of string, check if current position accepts
 	if pos == n {
 		if e.dfa.Start.IsAccept {
 			return pos, pos, captures
@@ -106,7 +127,6 @@ func (e *Engine) findFromWithCaptures(input string, pos int) (start, end int, ca
 	consumed := false
 	matchStartPos := pos
 
-	// Process each character starting from pos
 	for i := pos; i < n; i++ {
 		ch := inputRunes[i]
 		nextState := e.nextState(state, ch)
@@ -120,14 +140,11 @@ func (e *Engine) findFromWithCaptures(input string, pos int) (start, end int, ca
 		}
 	}
 
-	// Only return a match if we consumed input
 	if consumed && matchEnd >= 0 {
-		// Extract captures from match boundaries
 		captures = e.extractCaptures(inputRunes, matchStartPos, matchEnd)
 		return matchStartPos, matchEnd, captures
 	}
 
-	// Check for zero-length match
 	if state.IsAccept && (pos == n || consumed) {
 		return pos, pos, captures
 	}
@@ -138,35 +155,28 @@ func (e *Engine) findFromWithCaptures(input string, pos int) (start, end int, ca
 // extractCaptures extracts capture group text from the match
 func (e *Engine) extractCaptures(input []rune, start, end int) map[int]string {
 	captures := make(map[int]string)
-	
-	// If the pattern has capture groups, derive them from the match
 	if e.dfa != nil && e.dfa.HasCaptureGroups {
-		// For simple patterns, capture group 1 = full match text
 		captured := string(input[start:end])
 		captures[1] = captured
 	}
-	
 	return captures
 }
 
 // findFrom attempts to find a match starting at position pos
-// Returns match indices if found, or (-1, -1) if no match
-func (e *Engine) findFrom(input string, pos int) (start, end int) {
+func (e *Engine) findFrom(input []rune, pos int) (start, end int) {
 	if e.dfa == nil || e.dfa.Start == nil {
 		return -1, -1
 	}
 	
-	inputRunes := []rune(input)
-	n := len(inputRunes)
+	n := len(input)
 	
 	if pos > n {
 		return -1, -1
 	}
 	
-	// If we're at end of string, check if current position accepts
 	if pos == n {
 		if e.dfa.Start.IsAccept {
-			return pos, pos // zero-length match at end
+			return pos, pos
 		}
 		return -1, -1
 	}
@@ -174,21 +184,13 @@ func (e *Engine) findFrom(input string, pos int) (start, end int) {
 	state := e.dfa.Start
 	matchEnd := -1
 	consumed := false
-	firstAcceptPos := -1 // Track first accepting position for shortest match
-	
-	// Determine matching strategy: patterns that accept empty (like a*) should
-	// use shortest match to avoid greedily consuming too many chars.
-	// Patterns that don't accept empty (like ab+) should use longest match.
+	firstAcceptPos := -1
 	shortestMatch := e.dfa.Start.IsAccept
 	
-	// Process each character starting from pos
 	for i := pos; i < n; i++ {
-		ch := inputRunes[i]
+		ch := input[i]
 		nextState := e.nextState(state, ch)
 		if nextState == nil {
-			// No transition for this character.
-			// For shortest-match patterns (like a*), return at first accepting position.
-			// For longest-match patterns (like ab+), use the last accepting position.
 			if shortestMatch && firstAcceptPos >= 0 {
 				return pos, firstAcceptPos
 			}
@@ -198,19 +200,16 @@ func (e *Engine) findFrom(input string, pos int) (start, end int) {
 		consumed = true
 		if state.IsAccept {
 			matchEnd = i + 1
-			// Record first accepting position
 			if firstAcceptPos < 0 {
 				firstAcceptPos = i + 1
 			}
 		}
 	}
 	
-	// Only return a match if we consumed input
 	if consumed && matchEnd >= 0 {
 		return pos, matchEnd
 	}
 	
-	// Check for zero-length match only at start if pattern can match empty
 	if !consumed && state.IsAccept {
 		return pos, pos
 	}
@@ -225,15 +224,7 @@ func (e *Engine) nextState(state *machine.DFAState, ch rune) *machine.DFAState {
 			return edge.Next
 		}
 	}
-	// Use wildcard fallback only when:
-	// 1. Pattern has wildcard (.)
-	// 2. Character is not newline (which . never matches)
-	// 3. Current state is NOT already accepting (don't consume past end of match)
-	// 4. State has WIDE transitions (many chars, indicating wildcard pattern)
-	//    If state has few transitions, it's an explicit character pattern - don't use fallback
 	if e.dfa.HasAny && !state.IsAccept && ch != '\n' && e.dfa.AnyAcceptState != nil {
-		// Only apply fallback if this state has wide transitions (95+ = ASCII printable range)
-		// This distinguishes wildcard patterns (.) from explicit char patterns (a.b)
 		if len(state.Trans) >= 95 {
 			return e.dfa.AnyAcceptState
 		}
@@ -241,7 +232,7 @@ func (e *Engine) nextState(state *machine.DFAState, ch rune) *machine.DFAState {
 	return nil
 }
 
-// FindAll finds all matches in the input, returning rune indices
+// FindAll finds all matches in the input
 func (e *Engine) FindAll(input string) [][]int {
 	if e == nil || e.dfa == nil {
 		return nil
@@ -253,24 +244,20 @@ func (e *Engine) FindAll(input string) [][]int {
 	n := len(inputRunes)
 	
 	for pos <= n {
-		matchStart, matchEnd := e.findFrom(input, pos)
+		matchStart, matchEnd := e.findFrom(inputRunes, pos)
 		if matchStart < 0 || matchEnd < 0 {
-			// No match at this position - try next position
 			pos++
 			continue
 		}
 		
-		// Clamp bounds
 		if matchEnd > n {
 			matchEnd = n
 		}
 		
-		// Only record if we matched something (non-zero length)
 		if matchEnd > matchStart {
 			matches = append(matches, []int{matchStart, matchEnd})
 		}
 		
-		// Advance position - for zero-length matches, advance by 1
 		if matchEnd == matchStart {
 			pos = matchStart + 1
 		} else {
@@ -299,7 +286,6 @@ func (e *Engine) Replace(src, repl string) string {
 	for _, match := range matches {
 		start, end := match[0], match[1]
 		
-		// Clamp bounds
 		if end > len(inputRunes) {
 			end = len(inputRunes)
 		}
@@ -310,14 +296,11 @@ func (e *Engine) Replace(src, repl string) string {
 			end = start
 		}
 		
-		// Append text before match
 		result = append(result, inputRunes[lastEnd:start]...)
-		// Append replacement
 		result = append(result, []rune(repl)...)
 		lastEnd = end
 	}
 	
-	// Append remaining text
 	result = append(result, inputRunes[lastEnd:]...)
 	
 	return string(result)

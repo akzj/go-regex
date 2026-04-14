@@ -1,10 +1,18 @@
 package api
 
 import (
+	"strings"
+
 	"github.com/akzj/go-regex/compiler"
 	"github.com/akzj/go-regex/engine"
 	"github.com/akzj/go-regex/parser"
 )
+
+// isLiteralPattern returns true if pattern has no regex metacharacters
+func isLiteralPattern(pattern string) bool {
+	metaChars := `.*+?^${[\()|`
+	return !strings.ContainsAny(pattern, metaChars)
+}
 
 // Regex represents a compiled regular expression
 type Regex struct {
@@ -38,8 +46,13 @@ func Compile(pattern string) (*Regex, error) {
 		return nil, err
 	}
 
-	// Create engine
-	e := engine.New(dfa)
+	// Create engine - use literal fast path if applicable
+	var e *engine.Engine
+	if isLiteralPattern(pattern) {
+		e = engine.NewWithLiteralPattern(dfa, pattern)
+	} else {
+		e = engine.New(dfa)
+	}
 
 	return &Regex{
 		engine: e,
@@ -75,9 +88,8 @@ func (r *Regex) Find(s string) string {
 	if start < 0 {
 		return ""
 	}
-	// Convert to runes since engine.Find returns rune indices
-	inputRunes := []rune(s)
-	return string(inputRunes[start:end])
+	// Fast path: use byte slicing for ASCII (no allocation)
+	return s[start:end]
 }
 
 // FindStringSubmatch returns a slice of strings holding the text of

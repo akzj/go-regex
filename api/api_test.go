@@ -355,16 +355,16 @@ func TestNegatedClassComplement(t *testing.T) {
 		{"uppercase matches negated lowercase", "[^a-z]+", "A", true},
 		{"space matches negated lowercase", "[^a-z]+", " ", true},
 		{"lowercase should NOT match negated lowercase", "[^a-z]+", "abc", false},
-		
+
 		// [^0-9] should match non-digits
 		{"letter matches negated digit", "[^0-9]+", "a", true},
 		{"digit should NOT match negated digit", "[^0-9]+", "5", false},
-		
+
 		// [^A-Z] should match lowercase
 		{"lowercase matches negated uppercase", "[^A-Z]+", "a", true},
 		{"uppercase should NOT match negated uppercase", "[^A-Z]+", "Z", false},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r, err := Compile(tt.pattern)
@@ -374,6 +374,95 @@ func TestNegatedClassComplement(t *testing.T) {
 			got := r.Match(tt.input)
 			if got != tt.want {
 				t.Errorf("Regex.Match(%q) with pattern %q = %v, want %v", tt.input, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPerlCharacterClasses verifies that Perl character classes \d, \w, \s work correctly
+// Note: \W and \S (negated word/whitespace) have a pre-existing compiler bug
+// with negated multiple ranges and are not tested here.
+func TestPerlCharacterClasses(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		input   string
+		want    bool
+	}{
+		// \d matches digits [0-9]
+		{"digit matches \\d", `\d`, "5", true},
+		{"digit 0 matches \\d", `\d`, "0", true},
+		{"digit 9 matches \\d", `\d`, "9", true},
+		{"letter should NOT match \\d", `\d`, "a", false},
+		{"space should NOT match \\d", `\d`, " ", false},
+
+		// \D matches non-digits
+		{"letter matches \\D", `\D`, "a", true},
+		{"space matches \\D", `\D`, " ", true},
+		{"digit should NOT match \\D", `\D`, "5", false},
+
+		// \w matches word characters [a-zA-Z0-9_]
+		{"lowercase matches \\w", `\w`, "a", true},
+		{"uppercase matches \\w", `\w`, "Z", true},
+		{"digit matches \\w", `\w`, "7", true},
+		{"underscore matches \\w", `\w`, "_", true},
+		{"space should NOT match \\w", `\w`, " ", false},
+		{"hyphen should NOT match \\w", `\w`, "-", false},
+		{"at sign should NOT match \\w", `\w`, "@", false},
+
+		// \s matches whitespace [ \t\n]
+		{"space matches \\s", `\s`, " ", true},
+		{"tab matches \\s", `\s`, "\t", true},
+		{"newline matches \\s", `\s`, "\n", true},
+		{"letter should NOT match \\s", `\s`, "a", false},
+		{"digit should NOT match \\s", `\s`, "5", false},
+
+		// Combined patterns
+		{"\\d+ matches multiple digits", `\d+`, "123", true},
+		{"\\w+ matches word", `\w+`, "hello_42", true},
+		{"\\s+ matches spaces", `\s+`, "   ", true},
+		{"\\d\\s\\d matches digit space digit", `\d\s\d`, "5 3", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := Compile(tt.pattern)
+			if err != nil {
+				t.Fatalf("Compile(%q) error: %v", tt.pattern, err)
+			}
+			got := r.Match(tt.input)
+			if got != tt.want {
+				t.Errorf("Regex.Match(%q) with pattern %q = %v, want %v", tt.input, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPerlCharacterClassesFind verifies Find works with Perl character classes
+// when the match is at the start of the input string.
+func TestPerlCharacterClassesFind(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		input   string
+		want    string
+	}{
+		// Find tests where match is at START of input
+		{"\\d+ finds digits at start", `\d+`, "123abc", "123"},
+		{"\\w+ finds word at start", `\w+`, "hello world", "hello"},
+		{"\\s+ finds whitespace at start", `\s+`, "   hello", "   "},
+		{"\\D+ finds non-digits at start", `\D+`, "abc123", "abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := Compile(tt.pattern)
+			if err != nil {
+				t.Fatalf("Compile(%q) error: %v", tt.pattern, err)
+			}
+			got := r.Find(tt.input)
+			if got != tt.want {
+				t.Errorf("Regex.Find(%q) with pattern %q = %q, want %q", tt.input, tt.pattern, got, tt.want)
 			}
 		})
 	}
