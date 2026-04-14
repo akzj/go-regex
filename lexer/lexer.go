@@ -122,9 +122,18 @@ func (l *lexer) scanEscape() Token {
 	l.pos++ // 消耗转义字符
 
 	switch ch {
-	case 'd', 'D', 'w', 'W', 's', 'S':
-		// 字符类简写：\d, \D, \w, \W, \s, \S
-		return Token{Type: TokenChar, Pos: l.start, Val: ch}
+	case 'd':
+		return Token{Type: TokenDigit, Pos: l.start}
+	case 'D':
+		return Token{Type: TokenNDigit, Pos: l.start}
+	case 'w':
+		return Token{Type: TokenWord, Pos: l.start}
+	case 'W':
+		return Token{Type: TokenNWord, Pos: l.start}
+	case 's':
+		return Token{Type: TokenSpace, Pos: l.start}
+	case 'S':
+		return Token{Type: TokenNSpace, Pos: l.start}
 	case '.':
 		return Token{Type: TokenDot, Pos: l.start, Val: '.'}
 	case '*':

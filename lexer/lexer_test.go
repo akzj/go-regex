@@ -107,12 +107,12 @@ func TestTokenize_Escapes(t *testing.T) {
 		{"escaped dollar", `\$`, []TokenType{TokenDollar, TokenEOF}},
 		{"escaped dash", `\-`, []TokenType{TokenDash, TokenEOF}},
 		{"escaped backslash", `\\`, []TokenType{TokenChar, TokenEOF}},
-		{"escape d", `\d`, []TokenType{TokenChar, TokenEOF}},
-		{"escape D", `\D`, []TokenType{TokenChar, TokenEOF}},
-		{"escape w", `\w`, []TokenType{TokenChar, TokenEOF}},
-		{"escape W", `\W`, []TokenType{TokenChar, TokenEOF}},
-		{"escape s", `\s`, []TokenType{TokenChar, TokenEOF}},
-		{"escape S", `\S`, []TokenType{TokenChar, TokenEOF}},
+		{"escape d", `\d`, []TokenType{TokenDigit, TokenEOF}},
+		{"escape D", `\D`, []TokenType{TokenNDigit, TokenEOF}},
+		{"escape w", `\w`, []TokenType{TokenWord, TokenEOF}},
+		{"escape W", `\W`, []TokenType{TokenNWord, TokenEOF}},
+		{"escape s", `\s`, []TokenType{TokenSpace, TokenEOF}},
+		{"escape S", `\S`, []TokenType{TokenNSpace, TokenEOF}},
 	}
 
 	for _, tt := range tests {
@@ -374,8 +374,8 @@ func TestTokenize_EscapeSequences(t *testing.T) {
 		return
 	}
 
-	// All escapes should return TokenChar
-	expectedTypes := []TokenType{TokenChar, TokenChar, TokenChar, TokenChar, TokenChar, TokenChar, TokenEOF}
+	// Perl character classes should return special token types
+	expectedTypes := []TokenType{TokenDigit, TokenNDigit, TokenWord, TokenNWord, TokenSpace, TokenNSpace, TokenEOF}
 	if len(tokens) != len(expectedTypes) {
 		t.Errorf("expected %d tokens, got %d", len(expectedTypes), len(tokens))
 		return

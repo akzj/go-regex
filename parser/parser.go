@@ -155,6 +155,62 @@ func (p *parser) parseAtom() ast.Node {
 		p.l.Next() // consume
 		return &ast.CharNode{Ch: tok.Val}
 
+	// Perl character classes
+	case lexer.TokenDigit:
+		p.l.Next()
+		return &ast.ClassNode{
+			Ranges:   []ast.CharRange{{Lo: '0', Hi: '9'}},
+			Negated:  false,
+		}
+	case lexer.TokenNDigit:
+		p.l.Next()
+		return &ast.ClassNode{
+			Ranges:   []ast.CharRange{{Lo: '0', Hi: '9'}},
+			Negated:  true,
+		}
+	case lexer.TokenWord:
+		p.l.Next()
+		return &ast.ClassNode{
+			Ranges: []ast.CharRange{
+				{Lo: 'a', Hi: 'z'},
+				{Lo: 'A', Hi: 'Z'},
+				{Lo: '0', Hi: '9'},
+				{Lo: '_', Hi: '_'},
+			},
+			Negated: false,
+		}
+	case lexer.TokenNWord:
+		p.l.Next()
+		return &ast.ClassNode{
+			Ranges: []ast.CharRange{
+				{Lo: 'a', Hi: 'z'},
+				{Lo: 'A', Hi: 'Z'},
+				{Lo: '0', Hi: '9'},
+				{Lo: '_', Hi: '_'},
+			},
+			Negated: true,
+		}
+	case lexer.TokenSpace:
+		p.l.Next()
+		return &ast.ClassNode{
+			Ranges: []ast.CharRange{
+				{Lo: ' ', Hi: ' '},
+				{Lo: '\t', Hi: '\t'},
+				{Lo: '\n', Hi: '\n'},
+			},
+			Negated: false,
+		}
+	case lexer.TokenNSpace:
+		p.l.Next()
+		return &ast.ClassNode{
+			Ranges: []ast.CharRange{
+				{Lo: ' ', Hi: ' '},
+				{Lo: '\t', Hi: '\t'},
+				{Lo: '\n', Hi: '\n'},
+			},
+			Negated: true,
+		}
+
 	case lexer.TokenDot:
 		p.l.Next()
 		return &ast.AnyNode{}
